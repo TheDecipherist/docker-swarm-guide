@@ -381,6 +381,29 @@ docker secret create app_secrets ./secrets.json
 
 Secrets appear as files in `/run/secrets/SECRET_NAME`. They're encrypted at rest, not visible in `docker inspect`, and only sent to nodes that need them.
 
+### Why Environment Variables Aren't "Safe"
+
+**Common misconception:** "It's not hardcoded, it's an env var, so it's safe."
+
+**Reality:** Any process running inside the container can read environment variables. A compromised dependency, a debug endpoint, or a memory dump can expose them.
+
+**Better approach (Node.js example):**
+
+```javascript
+// Instead of: const apiKey = process.env.API_KEY
+// Do this:
+const fs = require('fs');
+
+function getSecret(secretName) {
+  const secretPath = process.env[`${secretName}_FILE`] || `/run/secrets/${secretName}`;
+  return fs.readFileSync(secretPath, 'utf8').trim();
+}
+
+const apiKey = getSecret('API_KEY');
+```
+
+Your env var points to a **filename**, not the secret itself. The function reads the actual secret from the Docker secret file at runtime. This adds a layer of abstraction - even if env vars leak, attackers only get file paths, not credentials.
+
 ---
 
 ## CI/CD Versioning

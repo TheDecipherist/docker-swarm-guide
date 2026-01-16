@@ -1182,6 +1182,48 @@ In your application, read `/run/secrets/app_secrets` instead of using env vars f
 - Only sent to nodes that need them
 - Proper file permissions can be set
 
+### Why Environment Variables Aren't Actually "Safe"
+
+**Common misconception:** "It's not hardcoded, it's an environment variable, so it's safe."
+
+**Reality:** Any process running inside the container can read environment variables. A compromised dependency, a debug endpoint, a log statement that dumps `process.env`, or a memory dump can expose them all.
+
+**Better approach - use env vars to point to secret files:**
+
+```javascript
+// BAD: Secret value directly in environment
+// const apiKey = process.env.API_KEY
+
+// GOOD: Environment variable points to a filename
+const fs = require('fs');
+
+function getSecret(secretName) {
+  // Check for _FILE suffix convention, fallback to Docker secrets path
+  const secretPath = process.env[`${secretName}_FILE`] || `/run/secrets/${secretName}`;
+  return fs.readFileSync(secretPath, 'utf8').trim();
+}
+
+// Usage
+const apiKey = getSecret('API_KEY');
+const dbPassword = getSecret('DB_PASSWORD');
+```
+
+This pattern:
+1. **Adds a layer of abstraction** - even if env vars leak, attackers only get file paths
+2. **Works with Docker secrets** - reads from `/run/secrets/` by default
+3. **Supports the `_FILE` convention** - used by many official Docker images (MySQL, PostgreSQL, etc.)
+4. **Keeps secrets out of process memory dumps** - secret is read on-demand, not stored in `process.env`
+
+In your compose file:
+```yaml
+environment:
+  - API_KEY_FILE=/run/secrets/api_key
+  - DB_PASSWORD_FILE=/run/secrets/db_password
+secrets:
+  - api_key
+  - db_password
+```
+
 ---
 
 ## Docker Management & Deployment Platforms
