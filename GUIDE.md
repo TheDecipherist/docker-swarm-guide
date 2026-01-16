@@ -1145,6 +1145,91 @@ docker secret create app_secrets ./secrets.json
 # Or via Portainer's GUI
 ```
 
+### Creating Secrets Properly
+
+**Method 1: From a file (common but has risks)**
+```bash
+docker secret create my_secret ./secret.txt
+```
+**Risk:** The file still exists on disk. Delete it after creating the secret, or use Method 2.
+
+**Method 2: From stdin (more secure)**
+```bash
+# Single value
+echo "my_super_secret_password" | docker secret create db_password -
+
+# Or use printf to avoid newline issues
+printf "my_api_key_here" | docker secret create api_key -
+
+# From password manager or environment (never type secrets in shell history)
+cat /dev/stdin | docker secret create api_key -
+# Then paste and press Ctrl+D
+```
+**Why stdin?** No file on disk, no shell history (if you pipe from another command).
+
+**Method 3: Multi-line secrets (JSON, certificates, etc.)**
+```bash
+# JSON config
+cat << 'EOF' | docker secret create app_config -
+{
+  "database": "mongodb://...",
+  "api_key": "sk-...",
+  "jwt_secret": "..."
+}
+EOF
+
+# Or from existing file, then delete
+docker secret create ssl_cert ./cert.pem && rm ./cert.pem
+```
+
+### Managing Secrets
+
+```bash
+# List all secrets
+docker secret ls
+
+# Inspect secret metadata (NOT the value - that's the point!)
+docker secret inspect my_secret
+
+# See which services use a secret
+docker service inspect --format '{{json .Spec.TaskTemplate.ContainerSpec.Secrets}}' myservice | jq
+
+# Delete a secret (must not be in use)
+docker secret rm my_secret
+```
+
+### Updating Secrets (They're Immutable!)
+
+**Common mistake:** Trying to update a secret in place. Docker secrets are **immutable** - you can't change them.
+
+**The correct workflow:**
+```bash
+# 1. Create new secret with versioned name
+echo "new_password_value" | docker secret create db_password_v2 -
+
+# 2. Update your compose file to reference the new secret
+# secrets:
+#   - db_password_v2   # was: db_password
+
+# 3. Redeploy the stack
+docker stack deploy -c docker-compose.yml mystack
+
+# 4. Remove old secret (once no services use it)
+docker secret rm db_password
+```
+
+**Pro tip:** Use a naming convention like `secret_name_v1`, `secret_name_v2` or `secret_name_20260116` for easier rotation tracking.
+
+### Common Mistakes to Avoid
+
+| Mistake | Why It's Bad | Fix |
+|---------|--------------|-----|
+| Creating from file, not deleting file | Secret sits on disk in plaintext | Use stdin or delete file immediately |
+| Putting secret in shell command | Saved in `.bash_history` | Pipe from stdin or use `read -s` |
+| Using same secret across environments | Compromised staging = compromised production | Separate secrets per environment |
+| Not versioning secrets | Can't rollback if new secret breaks things | Use `_v1`, `_v2` suffix |
+| Committing `.secrets/` folder | Secrets end up in git history forever | Add to `.gitignore` FIRST |
+
 ### Multiple Secret Types Example
 
 ```yaml

@@ -374,10 +374,27 @@ services:
       - app_secrets
 ```
 
-Create secrets:
+### Creating Secrets (Do It Right)
+
 ```bash
-docker secret create app_secrets ./secrets.json
+# Method 1: From file (delete the file after!)
+docker secret create app_secrets ./secrets.json && rm ./secrets.json
+
+# Method 2: From stdin (more secure - no file on disk)
+echo "my_password" | docker secret create db_password -
+
+# Method 3: Interactive (doesn't save to shell history)
+cat /dev/stdin | docker secret create api_key -
+# Paste your secret, then Ctrl+D
+
+# List secrets
+docker secret ls
+
+# Delete (must not be in use by any service)
+docker secret rm old_secret
 ```
+
+**Secrets are immutable.** To update, create a new versioned secret (`db_password_v2`), update your compose, redeploy, then delete the old one.
 
 Secrets appear as files in `/run/secrets/SECRET_NAME`. They're encrypted at rest, not visible in `docker inspect`, and only sent to nodes that need them.
 
